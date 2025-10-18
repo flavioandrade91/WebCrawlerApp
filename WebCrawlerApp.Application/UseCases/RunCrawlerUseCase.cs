@@ -43,39 +43,60 @@ public class RunCrawlerUseCase
         var allRecords = new List<ProxyRecord>();
         var tasks = new List<Task>();
 
+        //for (int page = 1; page <= totalPages; page++)
+        //{
+        //    await semaphore.WaitAsync(ct);
+        //    var pageNumber = page;
+
+        //    tasks.Add(Task.Run(async () =>
+        //    {
+        //        try
+        //        {
+        //            var pageResult = await _gateway.FetchPageAsync(pageNumber, ct);
+
+        //            var htmlPath = await _storage.SaveHtmlAsync($"proxies_page_{pageNumber}.html", pageResult.HtmlContent, ct);
+
+        //            // Converter linhas cruas em entidades de domínio
+        //            var recs = pageResult.Rows
+        //                .Select(r => ProxyFactory.Create(r.IpAddress, r.Port, r.Country, r.Protocol, run.Id))
+        //                .ToList();
+
+        //            lock (allRecords)
+        //            {
+        //                allRecords.AddRange(recs);
+        //            }
+
+        //            // Persistir metadados da página
+        //            var pageEntity = new CrawlerPage(pageNumber, htmlPath, recs.Count, run.Id);
+        //            await _pageRepo.AddAsync(pageEntity, ct);
+        //        }
+        //        finally
+        //        {
+        //            semaphore.Release();
+        //        }
+        //    }, ct));
+        //}
+
         for (int page = 1; page <= totalPages; page++)
         {
-            await semaphore.WaitAsync(ct);
+            await semaphore.WaitAsync(); // sem ct
             var pageNumber = page;
 
             tasks.Add(Task.Run(async () =>
             {
                 try
                 {
-                    var pageResult = await _gateway.FetchPageAsync(pageNumber, ct);
-
-                    var htmlPath = await _storage.SaveHtmlAsync($"proxies_page_{pageNumber}.html", pageResult.HtmlContent, ct);
-
-                    // Converter linhas cruas em entidades de domínio
-                    var recs = pageResult.Rows
-                        .Select(r => ProxyFactory.Create(r.IpAddress, r.Port, r.Country, r.Protocol, run.Id))
-                        .ToList();
-
-                    lock (allRecords)
-                    {
-                        allRecords.AddRange(recs);
-                    }
-
-                    // Persistir metadados da página
-                    var pageEntity = new CrawlerPage(pageNumber, htmlPath, recs.Count, run.Id);
-                    await _pageRepo.AddAsync(pageEntity, ct);
+                    // Aqui você decide: pode usar ct para I/O (cancelar apenas HTTP) ou CancellationToken.None
+                    var pageResult = await _gateway.FetchPageAsync(pageNumber, ct); // cancela I/O se ct for cancelado
+                                                                                    // ... resto igual
                 }
                 finally
                 {
                     semaphore.Release();
                 }
-            }, ct));
+            })); // sem ct
         }
+
 
         await Task.WhenAll(tasks);
 

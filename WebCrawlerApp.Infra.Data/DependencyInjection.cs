@@ -37,6 +37,7 @@ namespace WebCrawlerApp.Infra.Data
             //     ?? "https://proxyservers.pro/proxy/list/order/updated/order_dir/desc";
             //    return new ProxyServersGateway(httpClient, baseUrl);
             //}); 
+
             // Garante IHttpClientFactory registrado
             services.AddHttpClient();
 
@@ -48,7 +49,7 @@ namespace WebCrawlerApp.Infra.Data
                 var httpClient = httpClientFactory.CreateClient();
 
                 // Configura HttpClient a partir do appsettings
-                httpClient.Timeout = TimeSpan.FromSeconds(cfg.GetValue<int>("Crawler:RequestTimeoutSeconds", 30));
+                httpClient.Timeout = TimeSpan.FromSeconds(cfg.GetValue<int>("Crawler:RequestTimeoutSeconds", 120));
                 var ua = cfg.GetValue<string>("Crawler:UserAgent") ?? "Mozilla/5.0 (compatible; ProxyCrawler/1.0)";
                 httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(ua);
 
