@@ -24,20 +24,40 @@ namespace WebCrawlerApp.Infra.Data
             services.AddScoped<IProxyRepository, ProxyRepository>();
             services.AddScoped<ICrawlerPageRepository, CrawlerPageRepository>();
 
+            // Gateways
+            //services.AddHttpClient<ICrawlerGateway, ProxyServersGateway>(client =>
+            //{
+            //    client.Timeout = TimeSpan.FromSeconds(config.GetValue("Crawler:RequestTimeoutSeconds", 30));
+            //    var ua = config.GetValue<string>("Crawler:UserAgent") ?? "Mozilla/5.0 (compatible; ProxyCrawler/1.0)";
+            //    client.DefaultRequestHeaders.UserAgent.ParseAdd(ua);
+            //})
+            //    .AddTypedClient((httpClient, sp) =>
+            //{
+            //    var baseUrl = config.GetValue<string>("Crawler:BaseUrl")
+            //     ?? "https://proxyservers.pro/proxy/list/order/updated/order_dir/desc";
+            //    return new ProxyServersGateway(httpClient, baseUrl);
+            //}); 
+            // Garante IHttpClientFactory registrado
+            services.AddHttpClient();
 
-            services.AddHttpClient<ICrawlerGateway, ProxyServersGateway>(client =>
+            // Registra ICrawlerGateway com factory explícita (injeta o baseUrl manualmente)
+            services.AddScoped<ICrawlerGateway>(sp =>
             {
-                client.Timeout = TimeSpan.FromSeconds(config.GetValue("Crawler:RequestTimeoutSeconds", 30));
-                var ua = config.GetValue<string>("Crawler:UserAgent") ?? "Mozilla/5.0 (compatible; ProxyCrawler/1.0)";
-                client.DefaultRequestHeaders.UserAgent.ParseAdd(ua);
-            })
-                .AddTypedClient((httpClient, sp) =>
-            {
-                var baseUrl = config.GetValue<string>("Crawler:BaseUrl")
-                 ?? "https://proxyservers.pro/proxy/list/order/updated/order_dir/desc";
+                var cfg = sp.GetRequiredService<IConfiguration>();
+                var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+                var httpClient = httpClientFactory.CreateClient();
+
+                // Configura HttpClient a partir do appsettings
+                httpClient.Timeout = TimeSpan.FromSeconds(cfg.GetValue<int>("Crawler:RequestTimeoutSeconds", 30));
+                var ua = cfg.GetValue<string>("Crawler:UserAgent") ?? "Mozilla/5.0 (compatible; ProxyCrawler/1.0)";
+                httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(ua);
+
+                // Lê o BaseUrl (com fallback)
+                var baseUrl = cfg.GetValue<string>("Crawler:BaseUrl")
+                    ?? "https://proxyservers.pro/proxy/list/order/updated/order_dir/desc";
+
                 return new ProxyServersGateway(httpClient, baseUrl);
-            }); 
-
+            });
             // File storage
             var htmlDir = config.GetSection("Storage")["HtmlOutputDir"] ?? "storage/html";
             var jsonDir = config.GetSection("Storage")["JsonOutputDir"] ?? "storage/json";
