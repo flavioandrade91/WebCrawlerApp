@@ -43,76 +43,61 @@ public class RunCrawlerUseCase
         var allRecords = new List<ProxyRecord>();
         var tasks = new List<Task>();
 
-        //for (int page = 1; page <= totalPages; page++)
-        //{
-        //    await semaphore.WaitAsync(ct);
-        //    var pageNumber = page;
-
-        //    tasks.Add(Task.Run(async () =>
-        //    {
-        //        try
-        //        {
-        //            var pageResult = await _gateway.FetchPageAsync(pageNumber, ct);
-
-        //            var htmlPath = await _storage.SaveHtmlAsync($"proxies_page_{pageNumber}.html", pageResult.HtmlContent, ct);
-
-        //            // Converter linhas cruas em entidades de domínio
-        //            var recs = pageResult.Rows
-        //                .Select(r => ProxyFactory.Create(r.IpAddress, r.Port, r.Country, r.Protocol, run.Id))
-        //                .ToList();
-
-        //            lock (allRecords)
-        //            {
-        //                allRecords.AddRange(recs);
-        //            }
-
-        //            // Persistir metadados da página
-        //            var pageEntity = new CrawlerPage(pageNumber, htmlPath, recs.Count, run.Id);
-        //            await _pageRepo.AddAsync(pageEntity, ct);
-        //        }
-        //        finally
-        //        {
-        //            semaphore.Release();
-        //        }
-        //    }, ct));
-        //}
-
+        
         for (int page = 1; page <= totalPages; page++)
         {
-            await semaphore.WaitAsync(); // sem ct
+            await semaphore.WaitAsync();
             var pageNumber = page;
 
             tasks.Add(Task.Run(async () =>
             {
                 try
                 {
-                    // Aqui você decide: pode usar ct para I/O (cancelar apenas HTTP) ou CancellationToken.None
-                    var pageResult = await _gateway.FetchPageAsync(pageNumber, ct); // cancela I/O se ct for cancelado
-                                                                                    // ... resto igual
+                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken.None);
+                    cts.CancelAfter(TimeSpan.FromSeconds(30));
+
+                    var pageResult = await _gateway.FetchPageAsync(pageNumber, cts.Token);
+
+                    var htmlPath = await _storage.SaveHtmlAsync($"proxies_page_{pageNumber}.html", pageResult.HtmlContent, CancellationToken.None);
+
+                    var recs = pageResult.Rows
+                        .Select(r => ProxyFactory.Create(r.IpAddress, r.Port, r.Country, r.Protocol, run.Id))
+                        .ToList();
+
+                    lock (allRecords) { allRecords.AddRange(recs); }
+
+                    var pageEntity = new CrawlerPage(pageNumber, htmlPath, recs.Count, run.Id);
+                    await _pageRepo.AddAsync(pageEntity, CancellationToken.None);
+
+                    Console.WriteLine($"Página {pageNumber}: {recs.Count} proxies");
+                }
+                catch (OperationCanceledException)
+                {
+                    Console.WriteLine($"Página {pageNumber}: timeout/cancel ao buscar HTML.");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Falha na página {pageNumber}: {ex.Message}");
                 }
                 finally
                 {
                     semaphore.Release();
                 }
-            })); // sem ct
+            }));
         }
-
 
         await Task.WhenAll(tasks);
 
-        // Salvar JSON com todos os registros extraídos
         var fileName = $"{_options.JsonOutputPrefix}{DateTime.UtcNow:yyyyMMdd_HHmmss}.json";
         var json = JsonSerializer.Serialize(
             allRecords.Select(r => new { r.IpAddress, r.Port, r.Country, r.Protocol }),
             new JsonSerializerOptions { WriteIndented = true });
 
-        var jsonPath = await _storage.SaveJsonAsync(fileName, json, ct);
-
-        // Persistir registros e finalizar run
-        await _proxyRepo.AddRangeAsync(allRecords, ct);
+        var jsonPath = await _storage.SaveJsonAsync(fileName, json, CancellationToken.None);
+        await _proxyRepo.AddRangeAsync(allRecords, CancellationToken.None);
 
         run.MarkFinished(totalPages, allRecords.Count, jsonPath);
-        await _runRepo.UpdateAsync(run, ct);
+        await _runRepo.UpdateAsync(run, CancellationToken.None);
 
         return run.Id;
     }
